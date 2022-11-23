@@ -7,7 +7,7 @@ author: "Alex Lee"
 date: 2022-11-20
 format:
    html:
-    code-fold: false
+    code-fold: show
     code-summary: "Show code"
     code-overflow: scroll
     code-line-numbers: true
