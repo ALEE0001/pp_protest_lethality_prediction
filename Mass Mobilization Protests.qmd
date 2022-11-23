@@ -22,13 +22,16 @@ knitr:
     warning: false
     message: false 
     cache: true
-    # column: page
     
 bibliography: refs.bib
 link-citations: true
 ---
 
-This document attempts to predict government's response to mass mobilization protests- of which that may lead to lethal outcomes. "Lethal Outcome" in this project is defined as "Shooting" or "Killing". Random Forest Model is chosen at the end with AUC score of 0.87
+Protests have played a major role throughout history in driving social movement and pursuing causes. Though not common, human casualties sometimes are unfortunate consequence to these events.
+
+This document attempts to predict government's response to mass mobilization protests- of which that may lead to lethal outcomes. "Lethal Outcome" hereafter is defined as "Shooting" or "Killing".
+
+Can we forecast the lethality of the protest and provide insight on how we can mitigate the danger?
 
 ## Libraries
 
@@ -48,7 +51,6 @@ library(kaggler)
 library(janitor)
 library(wbstats)
 library(vip)
-
 ```
 
 ## Data Import
@@ -56,22 +58,16 @@ library(vip)
 Four distinct datasets will be explored in this document, where **first two** will be used in the final model .
 
 1.  **df_protest**: Mass Mobillization Data of 166 countries, 1990-2020, tracking protests against governments. [@protest]
-2.  **df_cpi**: Corruption Perception Index Data of 189 countries, 1998-2021. [@cpi]
+2.  **df_hap**: World Happiness Data of 164 countries, 2015-2022. [@hap]
 3.  **df_gdp**: GDP Data of 217 countries, 1960-2021. [@gdp]
-4.  **df_hap**: World Happiness Data of 164 countries, 2015-2022. [@hap]
+4.  **df_cpi**: Corruption Perception Index Data of 189 countries, 1998-2021. [@cpi]
 
 ```{r Data Import, results='hide'}
 
 # Mass Mobilization Protest Data
 df_protest <- read_csv("data/Mass Mobilization Protests/df_massmobil.csv")
 
-# Corruption Perception Index Data
-df_cpi <- read_csv("data/Mass Mobilization Protests/df_cpi.csv")
-
-# GDP Data (Not used in final model)
-df_gdp <- wb_data("NY.GDP.MKTP.CD") %>% select(iso_3 = iso3c, year = date, gdp = NY.GDP.MKTP.CD)
-
-# World Happiness Index Data (Not used in final model)
+# World Happiness Index Data 
 get_kaggle_data <- function() {
   
     # Authenticate to Kaggle API 
@@ -142,45 +138,88 @@ get_kaggle_data <- function() {
 
 df_hap <- get_kaggle_data()
 
+
+# GDP Data (Not used in final model)
+df_gdp <- wb_data("NY.GDP.MKTP.CD") %>% select(iso_3 = iso3c, year = date, gdp = NY.GDP.MKTP.CD)
+
+# Corruption Perception Index Data (Not used in final model)
+df_cpi <- read_csv("data/Mass Mobilization Protests/df_cpi.csv")
+
+
 ```
 
 ## Data Overview
 
-#### 1. Mass Mobillization Data
+### 1. Mass Mobillization Data
 
-```{r Data Overview Protest}
+#### Summary
+
+```{r Data Overview Protest 1}
 
 df_protest %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "lrtip"))
 ```
 
-#### 2. Corruption Perception Index Data
+#### Sample Data
 
-```{r Data Overview cpi}
+```{r Data Overview Protest 2}
 
-df_cpi %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+df_protest %>% select(-sources, -notes) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
-#### 3. GDP Data
+### 2. World Happiness Data
 
-```{r Data Overview gdp}
+#### Summary
 
-df_gdp %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
-```
-
-#### 4. World Happiness Data
-
-```{r Data Overview hap}
+```{r Data Overview hap 1}
 
 df_hap %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
+#### Sample Data
+
+```{r Data Overview hap 2}
+
+df_hap %>% drop_na(happiness_score) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+```
+
+### 3. Corruption Perception Index Data
+
+#### Summary
+
+```{r Data Overview cpi 1}
+
+df_cpi %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+```
+
+#### Sample Data
+
+```{r Data Overview cpi 2}
+
+df_cpi %>% drop_na(cpi_score) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+```
+
+### 4. GDP Data
+
+#### Summary
+
+```{r Data Overview gdp 1}
+
+df_gdp %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+```
+
+#### Sample Data
+
+```{r Data Overview gdp 2}
+df_gdp %>% drop_na(gdp) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+```
+
 ## Data Transformation
 
-Data Overview section gave us a pretty good idea of how the data is structured, and I'd like to restructure it a bit and complete my joins prior to proceeding with any exploratory analysis.
+Now that we have a good overview of how the data is structured, let's restructure & join datasets together in preparation for exploratory data analysis & modeling.
 
 #### Data Cleansing
 
-Here we'll apply the first layer of data cleansing to edit dirty data, create target label, and remove what we don't need. Additional Transformation will be done in the Feature Engineering section down below.
+Here we'll apply the first layer of data cleansing to edit dirty data, create target label, and remove what we don't need. Additional transformation will be done in the Feature Engineering section down below.
 
 ```{r Data Cleansing}
 df_cleansed <- 
@@ -259,7 +298,6 @@ df_cleansed <-
   
   # Standardize col names.
   janitor::clean_names()
-
 ```
 
 #### Data Joining
@@ -279,47 +317,69 @@ df_cleansed_joined <-
                                               "Serbia and Montenegro" = "SRB",
                                               "Yugoslavia" = "YUG"))) %>%
   
+  # Join Happiness Score.
+  left_join(df_hap, by = c("iso_3", "year")) %>%
+  
+  # Join GDP.
+  left_join(df_gdp, by = c("iso_3", "year")) %>%
+  
   # Join Corruption Perception Index Score.
   left_join(df_cpi %>% 
               mutate(cpi_score =
                        case_when(Year <= 2009 ~ cpi_score * 10,
                                  TRUE ~ cpi_score)) %>%
               filter(!is.na(cpi_score)), 
-            by = c("iso_3", "year" = "Year")) %>%
-  
-  
-  # Join GDP.
-  left_join(df_gdp, by = c("iso_3", "year")) %>%
-  
-  
-  # Join Happiness Score.
-  left_join(df_hap, by = c("iso_3", "year"))
+            by = c("iso_3", "year" = "Year"))
 
-  
 ```
 
 ## EDA
 
 ```{r Exploratory Analysis}
-pairs <- ggpairs(df_cleansed_joined %>% 
-                  select(lethal,
-                         year,
-                         protestnumber,
-                         protesterviolence,
-                         participants,
-                         days_in_protest,
-                         cpi_score,
-                         gdp,
-                         happiness_score
-                         ))
+#| column: body-outset-right
 
+df_eda <- 
+  df_cleansed_joined %>% 
+  select(lethal,
+         year,
+         protesterviolence,
+         participants,
+         days_in_protest,
+         cpi_score,
+         gdp,
+         happiness_score
+         )
+
+df_eda %>% 
+  ggpairs(
+    mapping = aes(alpha = 0.5,
+                  color = 
+                    factor(lethal, 
+                           levels = c("Lethal", "Non-Lethal"), 
+                           labels = c("Lethal", "Non-Lethal")),
+                  ),
+    legend = 1,
+    upper = list(continuous = wrap("cor", alpha = 1, size = 2)),
+    title = "EDA"
+    ) +
+  theme(strip.text.x = element_text(size = 7),
+        strip.text.y = element_text(size = 7),
+        axis.text = element_text(size = 6),
+        legend.position = "bottom") +
+  labs(fill = "Lethality")
 ```
+
+There are a lot of information here. To point out few key insights:
+
+1.  Imbalanced, meaning there are unequal distribution of records between lethal vs. non-lethal records.
+
+2.  Clear distinction between lethal vs non-lethal records observed in \[protesterviolence\], \[cpi_score\], and \[happiness_score\].
 
 ## Correlation Analysis
 
 Let's check correlation between features to understand which features might be repetitive.
 
-```{r EDA}
+```{r Corr Analysis 1}
 
 # Create correlation matrix & plot.
 df_col <- cor(df_cleansed_joined %>% 
@@ -327,17 +387,20 @@ df_col <- cor(df_cleansed_joined %>%
                 select(-protest, -id, -ccode), 
               method = "spearman", use = "complete.obs")
 corrplot(df_col, "square", addrect = 3, order = 'hclust', diag = FALSE)
+```
 
+I'm particularly interested in \[happiness score\], \[gdp\], and \[cpi_score\] here. I'll run some significance tests to validate correlation between these features.
+
+```{r Corr Analysis 2}
 # Quick Significance Test on correlated variables.
 cor.test(df_cleansed_joined$gdp, df_cleansed_joined$happiness_score)
 cor.test(df_cleansed_joined$gdp, df_cleansed_joined$cpi_score)
 cor.test(df_cleansed_joined$happiness_score, df_cleansed_joined$cpi_score)
-
 ```
 
 ## Feature Selection
 
-A lot of time was spent on gathering the data, but we'll remove gdp and happiness data since the correlation test tells us that cpi, gdp, and happiness score are significantly correlated. I select cpi out of the three after observing how it impacts the final model score. I'll also remove all other highly correlated features.
+Test tells us that they're significantly correlated. We'll remove \[cpi_score\] and \[gdp\]. I'm choosing \[happiness_score\] over others based on our EDA (and comparing how all 3 impacts the final model). I'll also remove the duplicate date features.
 
 ```{r Feature Selection}
 df_final <- 
@@ -351,7 +414,7 @@ df_final <-
          protesterviolence,
          participants,
          days_in_protest,
-         cpi_score,
+         happiness_score,
          political_behavior_process,
          labor_wage_dispute,
          land_farm_issue,
@@ -368,14 +431,13 @@ df_final <-
 Split the data to 75% Train and 25% Test, and create 25 partitions of K-Folds.
 
 ```{r Train Test Split}
-set.seed(80)
+set.seed(49)
 pt_split <- initial_split(df_final, strata = lethal)
 
 pt_train <- training(pt_split)
 pt_test <- testing(pt_split)
 
 df_folds <- vfold_cv(pt_train, v = 25, strata = lethal)
-
 ```
 
 ## Feature Engineering
@@ -383,6 +445,10 @@ df_folds <- vfold_cv(pt_train, v = 25, strata = lethal)
 We'll use recipes package to create a recipe of feature engineering pipeline.
 
 ```{r Feature Engineering}
+
+# DT seems to be overriding already existing functions. Detach in this code block.
+if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
+
 pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   update_role(id, new_role = "id") %>%
 
@@ -390,16 +456,16 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   step_impute_knn(participants) %>%
   step_discretize_xgb(participants, outcome = "lethal") %>%
   
-  # Impute & Bin [CPI Score].
-  step_impute_knn(cpi_score) %>%
-  step_discretize_xgb(cpi_score, outcome = "lethal") %>%
+  # Impute & Bin [Happiness Score].
+  step_impute_knn(happiness_score) %>%
+  step_discretize_xgb(happiness_score, outcome = "lethal") %>%
    
   # Convert [Participants] and [CPI Score] to ordinal factor.
   step_mutate(participants = factor(participants, levels = sort(unique(participants)), ordered = TRUE)) %>%
-  step_mutate(cpi_score = factor(cpi_score, levels = sort(unique(cpi_score)), ordered = TRUE)) %>%
+  step_mutate(happiness_score = factor(happiness_score, levels = sort(unique(happiness_score)), ordered = TRUE)) %>%
 
-  # Convert [Participants] and [CPI Score] to numeric.
-  step_ordinalscore(c("participants", "cpi_score")) %>%
+  # Convert [Participants] and [Happiness Score] to numeric.
+  step_ordinalscore(c("participants", "happiness_score")) %>%
   
   # One Hot encode all nominal features.
   step_dummy(all_nominal(), -all_outcomes()) %>%
@@ -416,15 +482,89 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   prep()
 ```
 
-## Model
+## Model Building
 
-Predicting lethality of a protest would be categorized into a classification problem. There are many algorithms to use for such cases, and we'll try to use couple of them and pick the one with best outcome in the end. We'll cover KNN, Random Forest, and XGBoost algorithms.
+Predicting lethality of a protest is a classification problem. There are many algorithms to use, and we'll try to use couple of them and pick the one with best outcome in the end. We'll cover Logistic Regression, KNN, Random Forest, and XGBoost algorithms.
+
+### Model: Logistic Regression
+
+Here we create a specification for Logistic Regression Model, then use tune_grid to collect performance metrics of different hyper parameters.
+
+```{r Logistic Regression 1}
+
+lr_spec <- 
+  logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_mode("classification") %>% 
+  set_engine("glmnet") 
+
+lr_workflow <- 
+  workflow() %>% 
+  add_recipe(pt_rec) %>% 
+  add_model(lr_spec) 
+
+# Use the model if it already exists- if not, create the model.
+lr_path <- file.path("data/Mass Mobilization Protests/lr_tune.rds")
+
+if (file.exists(lr_path)) {
+  lr_tune <- read_rds(file = lr_path)
+  } else {
+    lr_tune <-
+    tune_grid(lr_workflow, resamples = df_folds, grid = 11)
+    saveRDS(lr_tune, file = lr_path)
+  }
+```
+
+What are the best parameters according to our metrics collected from different folds?
+
+```{r Logistic Regression 2}
+# Reload DT
+library(DT)
+
+# Show best parameters
+show_best(lr_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+show_best(lr_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+
+# Show all parameters from folds.
+plt_lr_penalty <- 
+  lr_tune %>%
+  collect_metrics() %>%
+  filter(.metric == "roc_auc") %>%
+  select(mean, penalty) %>%
+  ggplot(aes(penalty, mean)) +
+  geom_point(show.legend = FALSE)
+
+plt_lr_mixture <-
+  lr_tune %>%
+  collect_metrics() %>%
+  filter(.metric == "roc_auc") %>%
+  select(mean, mixture) %>%
+  ggplot(aes(mixture, mean)) +
+  geom_point(show.legend = FALSE)
+
+grid.arrange(plt_lr_penalty, plt_lr_mixture)
+```
+
+Lastly, fit the model
+
+```{r Logistic Regression 3}
+# Create a workflow to use a model with best hyper parameters based on roc curve.
+final_lr_wf <- lr_workflow %>%
+  finalize_workflow(select_best(lr_tune, "roc_auc"))
+
+# Fit the model.
+protest_fit_lr <- last_fit(final_lr_wf, pt_split)
+```
+
+We'll follow the same steps below to create Random Forest and XGBoost model.
 
 ### Model: Weighted K-Nearest Neighbor
 
-Here we create a specification for kknn, then use tune_grid to collect performance metrics of different hyper parameters.
+Create specification for KKNN Model and collect performance metrics from folds.
 
 ```{r Weighted K-Nearest Neighbor 1}
+# DT seems to be overriding already existing functions. Detach in this code block.
+if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
+
 kknn_spec <- 
   nearest_neighbor(neighbors = tune(), weight_func = tune()) %>%
   set_mode("classification") %>% 
@@ -450,6 +590,9 @@ if (file.exists(kknn_path)) {
 What are the best parameters according to our metrics collected from different folds?
 
 ```{r Weighted K-Nearest Neighbor 2}
+# Reload DT
+library(DT)
+
 # Show best parameters
 show_best(kknn_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 show_best(kknn_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
@@ -474,7 +617,7 @@ plt_kknn_weight_func <-
 grid.arrange(plt_kknn_neighbors, plt_kknn_weight_func)
 ```
 
-Lastly, fitting the model
+Fit the model.
 
 ```{r Weighted K-Nearest Neighbor Fit}
 # Create a workflow to use a model with best hyper parameters based on roc curve.
@@ -485,13 +628,16 @@ final_kknn_wf <- kknn_workflow %>%
 protest_fit_kknn <- last_fit(final_kknn_wf, pt_split)
 ```
 
-We'll follow the same steps below to create Random Forest and XGBoost model.
-
 ### Model: Random Forest
 
+Create specification for Random Forest Model and collect performance metrics from folds.
+
 ```{r Random Forest 1}
+# DT seems to be overriding already existing functions. Detach in this code block.
+if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
+
 ranger_spec <- 
-  rand_forest(mtry = tune(), min_n = tune(), trees = 1000) %>%
+  rand_forest(mtry = tune(), min_n = tune(), trees = tune()) %>%
   set_mode("classification") %>% 
   set_engine("ranger")
 
@@ -512,7 +658,11 @@ if (file.exists(ranger_path)) {
     }
 ```
 
+Show best parameters from folds.
+
 ```{r Random Forest 2}
+library(DT)
+
 # Show Best Parameters.
 show_best(ranger_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 show_best(ranger_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
@@ -521,14 +671,16 @@ show_best(ranger_tune, metric = "roc_auc") %>% datatable(options = list(scrollX 
 ranger_tune %>%
   collect_metrics() %>%
   filter(.metric == "roc_auc") %>%
-  select(mean, min_n, mtry) %>%
-  pivot_longer(min_n:mtry,
+  select(mean, min_n, mtry, trees) %>%
+  pivot_longer(min_n:trees,
                values_to = "value",
                names_to = "parameter") %>%
   ggplot(aes(value, mean, color = parameter)) +
   geom_point(show.legend = FALSE) +
   facet_wrap( ~ parameter, scales = "free_x")
 ```
+
+Fit the model.
 
 ```{r Random Forest 3}
 # Create a workflow to use a model with best hyper parameters based on roc curve.
@@ -537,12 +689,16 @@ final_rf_wf <- ranger_workflow %>%
 
 # Fit the model.
 protest_fit_rf <- last_fit(final_rf_wf, pt_split)
-
 ```
 
 ### Model: XGBoost
 
+Create specification for XGBoost Model and collect performance metrics from folds.
+
 ```{r XGBoost 1}
+# DT seems to be overriding already existing functions. Detach in this code block.
+if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
+
 xgboost_spec <- 
   boost_tree(trees = tune(), min_n = tune(), tree_depth = tune(), learn_rate = tune(),
              loss_reduction = tune(), sample_size = tune()) %>%
@@ -566,7 +722,11 @@ if (file.exists(xgboost_path)) {
     }
 ```
 
+Show best parameters from folds.
+
 ```{r XGBoost 2}
+library(DT)
+
 # Show Best Parameters.
 show_best(xgboost_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 show_best(xgboost_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
@@ -584,6 +744,8 @@ xgboost_tune %>%
   facet_wrap( ~ parameter, scales = "free_x")
 ```
 
+Fit the model.
+
 ```{r XGBoost 3}
 # Create a workflow to use a model with best hyper parameters based on roc curve.
 final_xgb_wf <- xgboost_workflow %>%
@@ -591,7 +753,6 @@ final_xgb_wf <- xgboost_workflow %>%
 
 # Fit the model.
 protest_fit_xgb <- last_fit(final_xgb_wf, pt_split)
-
 ```
 
 ## Model Results
@@ -599,18 +760,21 @@ protest_fit_xgb <- last_fit(final_xgb_wf, pt_split)
 Let's take a look at accuracy and roc_auc metrics to understand which model performed the best.
 
 ```{r Results 1}
+collect_metrics(protest_fit_lr) %>% mutate(model = "Logistic Regression")
 collect_metrics(protest_fit_kknn) %>% mutate(model = "KKNN")
 collect_metrics(protest_fit_rf) %>% mutate(model = "Random Forest")
 collect_metrics(protest_fit_xgb) %>% mutate(model = "XGBoost")
 ```
 
-#### Accuracy: Confusion Matrix
+### Confusion Matrix
 
 ```{r Results 2}
 # Confusion Matrix
 cm <-
-  collect_predictions(protest_fit_kknn) %>% 
-    mutate(model = "kknn") %>%
+  collect_predictions(protest_fit_lr) %>% 
+    mutate(model = "logreg") %>%
+    bind_rows(collect_predictions(protest_fit_kknn) %>%
+                mutate(model = "kknn")) %>%
     bind_rows(collect_predictions(protest_fit_rf) %>%
                 mutate(model = "rforest")) %>%
     bind_rows(collect_predictions(protest_fit_xgb)%>%
@@ -618,34 +782,40 @@ cm <-
     group_by(model) %>%
     conf_mat(lethal, .pred_class)
  
+lr_cm <- cm %>% filter(model == "logreg") %>% .$conf_mat %>% .[[1]] %>% 
+  autoplot(type = "heatmap") + ggtitle("Logistic Regression") + theme(plot.title = element_text(hjust = 0.95))
 kknn_cm <- cm %>% filter(model == "kknn") %>% .$conf_mat %>% .[[1]] %>% 
-  autoplot(type = "heatmap") + ggtitle("KKNN") + theme(plot.title = element_text(hjust = 0.95))
+  autoplot(type = "heatmap") + ggtitle("Weighted K-Nearest Neighbor") + theme(plot.title = element_text(hjust = 0.95))
 rf_cm <- cm %>% filter(model == "rforest") %>% .$conf_mat %>% .[[1]] %>% 
   autoplot(type = "heatmap") + ggtitle("Random Forest") + theme(plot.title = element_text(hjust = 0.95))
 xgboost_cm <- cm %>% filter(model == "xgboost") %>% .$conf_mat %>% .[[1]] %>% 
   autoplot(type = "heatmap") + ggtitle("XGBoost") + theme(plot.title = element_text(hjust = 0.95))
 
-grid.arrange(kknn_cm, rf_cm, xgboost_cm)
+grid.arrange(lr_cm, kknn_cm, rf_cm, xgboost_cm)
 ```
 
-#### ROC AUC: ROC Curve
+### ROC Curve
 
 ```{r Results 3}
 # ROC Curve
-collect_predictions(protest_fit_kknn) %>%
-  mutate(model = "KKNN") %>%
+collect_predictions(protest_fit_lr) %>%
+  mutate(model = "Logistic Regression") %>%
+  bind_rows(collect_predictions(protest_fit_kknn) %>%
+              mutate(model = "KKNN")) %>%
   bind_rows(collect_predictions(protest_fit_rf) %>%
               mutate(model = "Random Forest")) %>%
   bind_rows(collect_predictions(protest_fit_xgb)%>%
               mutate(model = "XGBoost")) %>%
   group_by(model) %>%
   roc_curve(lethal, .pred_Lethal) %>%
-  autoplot()
+  autoplot() +
+  ylab("True Positive Rate \n (Sensitivity)") +
+  xlab("False Positive Rate \n (1 - Specificity)")
 ```
 
-We can clearly see that Random Forest Model is performing the best in both accuracy and roc_auc.
+With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well.
 
-I especially like that it's performing at 0.87 roc_auc, potentially meaning that the model is good at generalization and will do pretty well at predicting with unseen data.
+I'll choose Random Forest Model as it performs a bit better. 86% TPR is not perfect, but is decent. Our model shows signs of good generalization and likely will do well at predicting with unseen data.
 
 ## RF: Variable Importance
 
@@ -662,22 +832,21 @@ workflow() %>%
   fit(pt_train) %>%
   extract_fit_parsnip() %>%
   vip(aesthetics = list(alpha = 0.8, fill = "midnightblue"))
-
 ```
 
 ## Conclusion
 
-Model tells us that 2 key features are the main predictors of life-threatening violence that may happen during protests.
+Model tells us that we can use 2 key features to intuitively guess if protest will be life-threatening.
 
 1.  Protester Violence
-2.  Corruption Perception Score
+2.  Happiness Score of a Country.
 
-Our data does not indicate whether a protester violence was initiated by protesters or the government. However, it's hard to argue against the fact that provocation by either side may escalate the situation.
+Our data does not indicate whether a protester violence was initiated by protesters or the government. However, we can safely assume that provocation by either side may escalate the situation.
 
-In addition, citizens' perception of government corruption and associated government track record leading up to the event also was a great predictor of how the government would respond.
+In addition, citizens' happiness score (and innate government track record impacting that happiness) is a great predictor of how the government would respond.
 
-This sounds like a no-brainer now that we look at it, but it's really nice to confirm it with real concrete data.
+Though this seems like a no-brainer now that we look at it, it's really nice to confirm it with concrete data.
 
-As a closing comment, this analysis in no way makes any statement about how the protest should be conducted, nor which method is the effective method to invoke change. Many prominent studies say that non-violent protest is the best method for social movements to pursue causes, but the reality is more complicated.
+As a closing comment, this analysis in no way makes any statement about how the protest should be conducted, nor which method is the effective method to invoke change. Many prominent studies claim that non-violent protest is the best method for social movements to pursue causes, but the reality may be more complicated.
 
-You can find all the resources of this document in my [Github Repo](https://github.com/ALEE0001/pp_protest_lethality_prediction)
+You can find all resources as well as saved models in my [Github Repo](https://github.com/ALEE0001/pp_protest_lethality_prediction).
