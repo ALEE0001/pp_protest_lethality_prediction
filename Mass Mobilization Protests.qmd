@@ -7,7 +7,7 @@ author: "Alex Lee"
 date: 2022-11-20
 format:
    html:
-    code-fold: true
+    code-fold: false
     code-summary: "Show code"
     code-overflow: scroll
     code-line-numbers: true
@@ -217,7 +217,7 @@ df_gdp %>% drop_na(gdp) %>% head() %>% datatable(options = list(scrollX = TRUE, 
 
 Now that we have a good overview of how the data is structured, let's restructure & join datasets together in preparation for exploratory data analysis & modeling.
 
-#### Data Cleansing
+### Data Cleansing
 
 Here we'll apply the first layer of data cleansing to edit dirty data, create target label, and remove what we don't need. Additional transformation will be done in the Feature Engineering section down below.
 
@@ -300,7 +300,7 @@ df_cleansed <-
   janitor::clean_names()
 ```
 
-#### Data Joining
+### Data Joining
 
 Let's join all datasets together using iso_3 country code and year as mapping keys.
 
@@ -325,9 +325,8 @@ df_cleansed_joined <-
   
   # Join Corruption Perception Index Score.
   left_join(df_cpi %>% 
-              mutate(cpi_score =
-                       case_when(Year <= 2009 ~ cpi_score * 10,
-                                 TRUE ~ cpi_score)) %>%
+              mutate(cpi_score = case_when(Year <= 2009 ~ cpi_score * 10,
+                                           TRUE ~ cpi_score)) %>%
               filter(!is.na(cpi_score)), 
             by = c("iso_3", "year" = "Year"))
 
@@ -351,17 +350,16 @@ df_eda <-
          )
 
 df_eda %>% 
-  ggpairs(
-    mapping = aes(alpha = 0.5,
-                  color = 
-                    factor(lethal, 
-                           levels = c("Lethal", "Non-Lethal"), 
-                           labels = c("Lethal", "Non-Lethal")),
-                  ),
-    legend = 1,
-    upper = list(continuous = wrap("cor", alpha = 1, size = 2)),
-    title = "EDA"
-    ) +
+  ggpairs(mapping = 
+            aes(alpha = 0.5,
+                color = 
+                  factor(lethal, 
+                         levels = c("Lethal", "Non-Lethal"), 
+                         labels = c("Lethal", "Non-Lethal"))
+                ),
+          legend = 1,
+          upper = list(continuous = wrap("cor", alpha = 1, size = 2)),
+          title = "EDA") +
   theme(strip.text.x = element_text(size = 7),
         strip.text.y = element_text(size = 7),
         axis.text = element_text(size = 6),
@@ -373,7 +371,7 @@ There are a lot of information here. To point out few key insights:
 
 1.  Imbalanced, meaning there are unequal distribution of records between lethal vs. non-lethal records.
 
-2.  Clear distinction between lethal vs non-lethal records observed in \[protesterviolence\], \[cpi_score\], and \[happiness_score\].
+2.  Signs of distinction between lethal vs non-lethal records observed in \[protesterviolence\], \[cpi_score\], and \[happiness_score\].
 
 ## Correlation Analysis
 
@@ -460,7 +458,7 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   step_impute_knn(happiness_score) %>%
   step_discretize_xgb(happiness_score, outcome = "lethal") %>%
    
-  # Convert [Participants] and [CPI Score] to ordinal factor.
+  # Convert [Participants] and [Happiness Score] to ordinal factor.
   step_mutate(participants = factor(participants, levels = sort(unique(participants)), ordered = TRUE)) %>%
   step_mutate(happiness_score = factor(happiness_score, levels = sort(unique(happiness_score)), ordered = TRUE)) %>%
 
@@ -760,10 +758,15 @@ protest_fit_xgb <- last_fit(final_xgb_wf, pt_split)
 Let's take a look at accuracy and roc_auc metrics to understand which model performed the best.
 
 ```{r Results 1}
-collect_metrics(protest_fit_lr) %>% mutate(model = "Logistic Regression")
-collect_metrics(protest_fit_kknn) %>% mutate(model = "KKNN")
-collect_metrics(protest_fit_rf) %>% mutate(model = "Random Forest")
-collect_metrics(protest_fit_xgb) %>% mutate(model = "XGBoost")
+result_lr <- collect_metrics(protest_fit_lr) %>% mutate(model = "Logistic Regression")
+result_kknn <- collect_metrics(protest_fit_kknn) %>% mutate(model = "KKNN")
+result_rf <- collect_metrics(protest_fit_rf) %>% mutate(model = "Random Forest")
+result_xgb <- collect_metrics(protest_fit_xgb) %>% mutate(model = "XGBoost")
+
+bind_rows(result_lr, result_kknn, result_rf, result_xgb) %>% 
+  pivot_wider(names_from = .metric, values_from = .estimate) %>% 
+  select(-.estimator, -.config) %>% 
+  datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
 ### Confusion Matrix
@@ -782,14 +785,41 @@ cm <-
     group_by(model) %>%
     conf_mat(lethal, .pred_class)
  
-lr_cm <- cm %>% filter(model == "logreg") %>% .$conf_mat %>% .[[1]] %>% 
-  autoplot(type = "heatmap") + ggtitle("Logistic Regression") + theme(plot.title = element_text(hjust = 0.95))
-kknn_cm <- cm %>% filter(model == "kknn") %>% .$conf_mat %>% .[[1]] %>% 
-  autoplot(type = "heatmap") + ggtitle("Weighted K-Nearest Neighbor") + theme(plot.title = element_text(hjust = 0.95))
-rf_cm <- cm %>% filter(model == "rforest") %>% .$conf_mat %>% .[[1]] %>% 
-  autoplot(type = "heatmap") + ggtitle("Random Forest") + theme(plot.title = element_text(hjust = 0.95))
-xgboost_cm <- cm %>% filter(model == "xgboost") %>% .$conf_mat %>% .[[1]] %>% 
-  autoplot(type = "heatmap") + ggtitle("XGBoost") + theme(plot.title = element_text(hjust = 0.95))
+lr_cm <- 
+  cm %>% 
+  filter(model == "logreg") %>% 
+  .$conf_mat %>% 
+  .[[1]] %>% 
+  autoplot(type = "heatmap") + 
+  ggtitle("Logistic Regression") +
+  theme(plot.title = element_text(hjust = 0.95))
+
+kknn_cm <- 
+  cm %>% 
+  filter(model == "kknn") %>% 
+  .$conf_mat %>% 
+  .[[1]] %>% 
+  autoplot(type = "heatmap") + 
+  ggtitle("Weighted K-Nearest Neighbor") + 
+  theme(plot.title = element_text(hjust = 0.95))
+
+rf_cm <- 
+  cm %>% 
+  filter(model == "rforest") %>% 
+  .$conf_mat %>% 
+  .[[1]] %>% 
+  autoplot(type = "heatmap") + 
+  ggtitle("Random Forest") + 
+  theme(plot.title = element_text(hjust = 0.95))
+
+xgboost_cm <- 
+  cm %>% 
+  filter(model == "xgboost") %>% 
+  .$conf_mat %>% 
+  .[[1]] %>% 
+  autoplot(type = "heatmap") + 
+  ggtitle("XGBoost") + 
+  theme(plot.title = element_text(hjust = 0.95))
 
 grid.arrange(lr_cm, kknn_cm, rf_cm, xgboost_cm)
 ```
@@ -813,13 +843,13 @@ collect_predictions(protest_fit_lr) %>%
   xlab("False Positive Rate \n (1 - Specificity)")
 ```
 
-With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well.
+With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well. 86% TPR is not perfect, but is decent. Our model shows signs of good generalization and likely will do well at predicting with unseen data.
 
-I'll choose Random Forest Model as it performs a bit better. 86% TPR is not perfect, but is decent. Our model shows signs of good generalization and likely will do well at predicting with unseen data.
+Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
 
 ## RF: Variable Importance
 
-What can we learn from the model? What are the most important features to predict lethality according to the model?
+What can we learn from the model? What are the most important features to predict lethality according to the random forest model?
 
 ```{r Variable Importance}
 imp_spec_rforest <- ranger_spec %>%
