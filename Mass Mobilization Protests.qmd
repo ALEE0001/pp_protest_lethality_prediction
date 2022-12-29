@@ -68,6 +68,8 @@ Four distinct datasets will be explored in this document, where **first two** wi
 df_protest <- read_csv("data/Mass Mobilization Protests/df_massmobil.csv")
 
 # World Happiness Index Data 
+source("functions.R")
+
 get_kaggle_data <- function() {
   
     # Authenticate to Kaggle API 
@@ -96,10 +98,9 @@ get_kaggle_data <- function() {
     for (i in kaggle_years_csv) {
       
       # Download
-      df_temp <- kgl_datasets_download(
-        owner_dataset = "mathurinache/world-happiness-report",
-        fileName = i,
-        datasetVersionNumber = 2)
+      df_temp <- kgl_dataset(
+        ref = "mathurinache/world-happiness-report",
+        file_name = i)
       
       # Data Cleansing
       df_temp <-
@@ -384,7 +385,7 @@ df_col <- cor(df_cleansed_joined %>%
                 select_if(is.numeric) %>% 
                 select(-protest, -id, -ccode), 
               method = "spearman", use = "complete.obs")
-corrplot(df_col, "square", addrect = 3, order = 'hclust', diag = FALSE)
+corrplot(df_col, "square", addrect = 5, order = 'hclust', diag = FALSE)
 ```
 
 I'm particularly interested in \[happiness score\], \[gdp\], and \[cpi_score\] here. I'll run some significance tests to validate correlation between these features.
@@ -456,14 +457,12 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   
   # Impute & Bin [Happiness Score].
   step_impute_knn(happiness_score) %>%
-  step_discretize_xgb(happiness_score, outcome = "lethal") %>%
    
-  # Convert [Participants] and [Happiness Score] to ordinal factor.
+  # Convert [Participants] to ordinal factor.
   step_mutate(participants = factor(participants, levels = sort(unique(participants)), ordered = TRUE)) %>%
-  step_mutate(happiness_score = factor(happiness_score, levels = sort(unique(happiness_score)), ordered = TRUE)) %>%
 
-  # Convert [Participants] and [Happiness Score] to numeric.
-  step_ordinalscore(c("participants", "happiness_score")) %>%
+  # Convert [Participants] to numeric.
+  step_ordinalscore(c("participants")) %>%
   
   # One Hot encode all nominal features.
   step_dummy(all_nominal(), -all_outcomes()) %>%
@@ -553,7 +552,7 @@ final_lr_wf <- lr_workflow %>%
 protest_fit_lr <- last_fit(final_lr_wf, pt_split)
 ```
 
-We'll follow the same steps below to create Random Forest and XGBoost model.
+We'll follow the same steps below to create KNN, Random Forest, and XGBoost .
 
 ### Model: Weighted K-Nearest Neighbor
 
@@ -847,36 +846,166 @@ With an unbalanced data like ours, accuracy can be a poor predictor of model per
 
 Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
 
-## RF: Variable Importance
+## Variable Importance: Logistic Regression
 
-What can we learn from the model? What are the most important features to predict lethality according to the random forest model?
+What can we learn from the model? What are the most important features to predict lethality according to the Logistic Regression model?
 
-```{r Variable Importance}
+```{r Variable Importance: LR}
+imp_spec_logreg <- lr_spec %>%
+  finalize_model(select_best(lr_tune, metric = "roc_auc")) %>%
+  set_engine("glmnet")
+
+plt_imp_logreg_nocountry <- workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(imp_spec_logreg) %>%
+  fit(pt_train) %>%
+  extract_fit_parsnip() %>%
+  vi_model() %>%
+  filter(!grepl("iso", Variable)) %>%
+  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue")) +
+  ggtitle("LR: VI Without Country Dummy Variables")
+
+plt_imp_logreg_wcountry <- workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(imp_spec_logreg) %>%
+  fit(pt_train) %>%
+  extract_fit_parsnip() %>%
+  vi_model() %>%
+  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue")) +
+  ggtitle("LR: VI With Country Dummy Variables")
+
+gA <- ggplotGrob(plt_imp_logreg_nocountry)
+gB <- ggplotGrob(plt_imp_logreg_wcountry)
+grid::grid.newpage()
+grid::grid.draw(rbind(gA, gB))
+```
+
+## Variable Importance: Random Forest
+
+What are the most important features to predict lethality according to the Random Forest model?
+
+```{r Variable Importance: RF}
 imp_spec_rforest <- ranger_spec %>%
   finalize_model(select_best(ranger_tune, metric = "roc_auc")) %>%
   set_engine("ranger", importance = "permutation")
 
-workflow() %>%
+plt_imp_rforest_nocountry <- workflow() %>%
   add_recipe(pt_rec) %>%
   add_model(imp_spec_rforest) %>%
   fit(pt_train) %>%
   extract_fit_parsnip() %>%
-  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue"))
+  vi_model() %>%
+  filter(!grepl("iso", Variable)) %>%
+  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue")) +
+  ggtitle("RF: VI Without Country Dummy Variables")
+
+plt_imp_rforest_wcountry <- workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(imp_spec_rforest) %>%
+  fit(pt_train) %>%
+  extract_fit_parsnip() %>%
+  vi_model() %>%
+  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue")) +
+  ggtitle("RF: VI With Country Dummy Variables")
+
+gA <- ggplotGrob(plt_imp_rforest_nocountry)
+gB <- ggplotGrob(plt_imp_rforest_wcountry)
+grid::grid.newpage()
+grid::grid.draw(rbind(gA, gB))
 ```
+
+**One Hot Encoded country dummy variables** make this analysis a bit messy to interpret. We can summarise that countries with consistent track record of response heavily influences the model prediction. For example, France, Ireland, Germany, and South Korea were among the top of list when it comes to predicting "Non-Lethal" cases per Logistic Regression.
+
+Note that two models will output different feature importance, since Random Forest importance is based on expected decrease in performance when said predictor is used in a tree, and GLM importance is based on the scale of coefficients. Combining these results will provide us with the most accurate interpretation.
 
 ## Conclusion
 
-Model tells us that we can use 2 key features to intuitively guess if protest will be life-threatening.
+We can use few key features to intuitively guess if protest will be life-threatening.
 
 1.  Protester Violence
-2.  Happiness Score of a Country.
+2.  Happiness Score of a Country
+3.  Days in Protest
+4.  Country
 
-Our data does not indicate whether a protester violence was initiated by protesters or the government. However, we can safely assume that provocation by either side may escalate the situation.
+::: panel-tabset
 
-In addition, citizens' happiness score (and innate government track record impacting that happiness) is a great predictor of how the government would respond.
+### Protester Violence
+```{r}
 
-Though this seems like a no-brainer now that we look at it, it's really nice to confirm it with concrete data.
+df_final %>% 
+  count(lethal, protesterviolence) %>% 
+  mutate(protesterviolence = 
+           case_when(protesterviolence == 0 ~ "No Protester violence", 
+                     TRUE ~ "Protester Violence")) %>% 
+  ggplot(aes(x = lethal, y = n, fill = lethal)) + 
+  geom_bar(stat = "identity", show.legend = FALSE) + 
+  facet_wrap("protesterviolence") + 
+  theme_bw() +
+  xlab("") +
+  ylab("Count")
+```
 
-As a closing comment, this analysis in no way makes any statement about how the protest should be conducted, nor which method is the effective method to invoke change. Many prominent studies claim that non-violent protest is the best method for social movements to pursue causes, but the reality may be more complicated.
+### Happiness Score
+```{r}
+
+df_final %>% 
+  filter(!is.na(happiness_score)) %>%
+  mutate(happiness_score_bin = cut(happiness_score, breaks=5)) %>% 
+  count(lethal, happiness_score_bin) %>% 
+  ggplot(aes(x = lethal, y = n, fill = lethal)) + 
+  geom_bar(stat = "identity", show.legend = FALSE) + 
+  facet_wrap("happiness_score_bin") + 
+  theme_bw() +
+  xlab("") +
+  ylab("Count") +
+  theme()
+```
+
+### Days in Protest
+```{r}
+df_final %>% 
+  filter(lethal == "Lethal") %>%
+  mutate(days_in_protest_bin = 
+           case_when(days_in_protest == 0 ~ "First Day of Protest", 
+                     TRUE ~ "On Second Day or After")) %>% 
+  count(days_in_protest_bin) %>% 
+  ggplot(aes(x = days_in_protest_bin, y = n)) + 
+  geom_bar(stat = "identity", show.legend = FALSE) + 
+  theme_bw() +
+  xlab("") +
+  ylab("Count") +
+  theme() +
+  ggtitle("Lethal Cases")
+```
+
+### Country
+```{r}
+df_final %>% 
+  mutate(Country = countrycode(iso_3, "iso3c", "country.name",
+                               custom_match = c("XXK" = "Kosovo",
+                                                "YUG" = "Yugoslavia"))) %>%
+  count(lethal, Country) %>% 
+  pivot_wider(names_from = lethal, values_from = n) %>%
+  mutate(Lethal = case_when(is.na(Lethal) ~ 0, TRUE ~ as.numeric(Lethal))) %>%
+  mutate(`Non-Lethal` = 
+           case_when(is.na(`Non-Lethal`) ~ 0, TRUE ~ as.numeric(`Non-Lethal`))) %>%
+  mutate(Percent_Lethal = 
+           percent(Lethal / (Lethal + `Non-Lethal`), accuracy = 0.1)) %>%
+  datatable(filter = "top", options = list(scrollX = TRUE, dom = "lrtip"))
+```
+
+:::
+
+Our data does not indicate whether a protester violence was originally initiated by protesters, or was initiated as a reaction to government's violence. However, we can safely assume that provocation by either side may escalate the situation.
+
+In addition, citizens' happiness score (and innate government track record impacting that happiness) is a great predictor of how the government would respond. Lower the score, higher the likelihood of lethal response to occur.
+
+Lastly, most lethal events happen on the first day of the protest, and countries with consistent track record are likely to continue do what they have done in the past.
+
+Though some of these seem like a no-brainer now that we look at it, as my mentor used to put it, good analysis often leads to obvious results.
+
+As a closing comment, this analysis in no way makes any statement about how the protest should be conducted, nor which method is the most effective to invoke change. Many prominent studies claim that non-violent protest is the best method for social movements to pursue causes, but the reality may be more complicated.
 
 You can find all resources as well as saved models in my [Github Repo](https://github.com/ALEE0001/pp_protest_lethality_prediction).
+
+Note: Rpubs blocks external redirections. Please open any links in this document in a new tab.
