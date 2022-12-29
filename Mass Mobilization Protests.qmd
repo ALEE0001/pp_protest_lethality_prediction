@@ -765,6 +765,8 @@ result_xgb <- collect_metrics(protest_fit_xgb) %>% mutate(model = "XGBoost")
 bind_rows(result_lr, result_kknn, result_rf, result_xgb) %>% 
   pivot_wider(names_from = .metric, values_from = .estimate) %>% 
   select(-.estimator, -.config) %>% 
+  mutate(accuracy = percent(accuracy, accuracy = 0.1)) %>%
+  mutate(roc_auc = percent(roc_auc, accuracy = 0.1)) %>%
   datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
