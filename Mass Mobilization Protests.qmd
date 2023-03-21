@@ -2,7 +2,7 @@
 title-block-style: default
 title-block-banner: "#191970"
 title-block-banner-color: "#FFFFFF"
-title: "Predicting Lethal Outcome of Protests"
+title: "Using ML to Identify Risk Factors and Predict Fatal Outcomes in Protests"
 author: "Alex Lee"
 date: 2022-11-20
 format:
