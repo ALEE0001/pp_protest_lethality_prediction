@@ -1,4 +1,4 @@
-# Predicting Lethal Outcome of Protests
+# Using ML to Identify Risk Factors and Predict Fatal Outcomes in Protests
 
 Protests have played a major role throughout history in driving social movement and pursuing causes. <br />
 Though not common, human casualties sometimes are unfortunate consequence to these events. <br />
