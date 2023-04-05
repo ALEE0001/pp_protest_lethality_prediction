@@ -151,6 +151,8 @@ df_cpi <- read_csv("data/Mass Mobilization Protests/df_cpi.csv")
 
 ## Data Overview
 
+::: panel-tabset
+
 ### 1. Mass Mobillization Data
 
 #### Summary
@@ -213,8 +215,11 @@ df_gdp %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```{r Data Overview gdp 2}
 df_gdp %>% drop_na(gdp) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
+:::
 
 ## Data Transformation
+
+::: panel-tabset
 
 Now that we have a good overview of how the data is structured, let's restructure & join datasets together in preparation for exploratory data analysis & modeling.
 
@@ -332,6 +337,8 @@ df_cleansed_joined <-
             by = c("iso_3", "year" = "Year"))
 
 ```
+
+:::
 
 ## EDA
 
@@ -455,7 +462,7 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
   step_impute_knn(participants) %>%
   step_discretize_xgb(participants, outcome = "lethal") %>%
   
-  # Impute & Bin [Happiness Score].
+  # Impute [Happiness Score].
   step_impute_knn(happiness_score) %>%
    
   # Convert [Participants] to ordinal factor.
@@ -482,6 +489,8 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
 ## Model Building
 
 Predicting lethality of a protest is a classification problem. There are many algorithms to use, and we'll try to use couple of them and pick the one with best outcome in the end. We'll cover Logistic Regression, KNN, Random Forest, and XGBoost algorithms.
+
+::: panel-tabset
 
 ### Model: Logistic Regression
 
@@ -752,6 +761,8 @@ final_xgb_wf <- xgboost_workflow %>%
 protest_fit_xgb <- last_fit(final_xgb_wf, pt_split)
 ```
 
+:::
+
 ## Model Results
 
 Let's take a look at accuracy and roc_auc metrics to understand which model performed the best.
@@ -769,6 +780,7 @@ bind_rows(result_lr, result_kknn, result_rf, result_xgb) %>%
   mutate(roc_auc = percent(roc_auc, accuracy = 0.1)) %>%
   datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
+
 
 ### Confusion Matrix
 
@@ -848,7 +860,11 @@ With an unbalanced data like ours, accuracy can be a poor predictor of model per
 
 Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
 
-## Variable Importance: Logistic Regression
+## Variable Importance
+
+::: panel-tabset
+
+### Logistic Regression
 
 What can we learn from the model? What are the most important features to predict lethality according to the Logistic Regression model?
 
@@ -882,7 +898,7 @@ grid::grid.newpage()
 grid::grid.draw(rbind(gA, gB))
 ```
 
-## Variable Importance: Random Forest
+### Random Forest
 
 What are the most important features to predict lethality according to the Random Forest model?
 
@@ -919,6 +935,8 @@ grid::grid.draw(rbind(gA, gB))
 **One Hot Encoded country dummy variables** make this analysis a bit messy to interpret. We can summarise that countries with consistent track record of response heavily influences the model prediction. For example, France, Ireland, Germany, and South Korea were among the top of list when it comes to predicting "Non-Lethal" cases per Logistic Regression.
 
 Note that two models will output different feature importance, since Random Forest importance is based on expected decrease in performance when said predictor is used in a tree, and GLM importance is based on the scale of coefficients. Combining these results will provide us with the most accurate interpretation.
+
+:::
 
 ## Conclusion
 
