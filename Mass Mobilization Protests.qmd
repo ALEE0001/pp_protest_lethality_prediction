@@ -858,7 +858,7 @@ collect_predictions(protest_fit_lr) %>%
 
 With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well. 86% TPR is not perfect, but is decent. Our model shows signs of good generalization and likely will do well at predicting with unseen data.
 
-Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
+Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it is more explanable and also scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
 
 ## Variable Importance
 
