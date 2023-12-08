@@ -36,7 +36,6 @@ Can we forecast the lethality of the protest and provide insight on how we can m
 ## Libraries
 
 ```{r setup}
-
 library(tidyverse)
 library(tidymodels)
 library(DT)
@@ -65,74 +64,83 @@ Four distinct datasets will be explored in this document, where **first two** wi
 ```{r Data Import, results='hide'}
 
 # Mass Mobilization Protest Data
-df_protest <- read_csv("data/Mass Mobilization Protests/df_massmobil.csv")
+df_protest <-
+  read_csv("data/Mass Mobilization Protests/df_massmobil.csv")
 
-# World Happiness Index Data 
+# World Happiness Index Data
 source("functions.R")
 
 get_kaggle_data <- function() {
+  # Authenticate to Kaggle API
+  # This is Hidden in Github. Please Generate your own for reproducibility.
+  kaggler::kgl_auth(creds_file = "kaggle.json")
   
-    # Authenticate to Kaggle API 
-    # This is Hidden in Github. Please Generate your own for reproducibility.
-    kaggler::kgl_auth(creds_file = "kaggle.json")
+  # Define starting point of download
+  kaggle_start_date <- 2015
+  
+  # Create blank vector to store output from below logic
+  kaggle_years <- c()
+  
+  # Get distinct years since 2015 up to current year
+  while (kaggle_start_date <= Sys.Date() %>% year()) {
+    kaggle_years <- append(kaggle_start_date, kaggle_years)
+    kaggle_start_date <- kaggle_start_date + 1
+  }
+  
+  # Get String values to use in download logic
+  kaggle_years_csv <- kaggle_years %>% paste0(".csv")
+  
+  # Clear df_hp object in case it already exists
+  if (exists("df_hp")) {
+    rm(df_hp)
+  }
+  
+  # Download data from Kaggle and store & append to df_hp object
+  for (i in kaggle_years_csv) {
+    # Download
+    df_temp <- kgl_dataset(ref = "mathurinache/world-happiness-report",
+                           file_name = i)
     
-    # Define starting point of download
-    kaggle_start_date <- 2015
+    # Data Cleansing
+    df_temp <-
+      lapply(df_temp, function(x)
+        sub(",", ".", x)) %>%
+      data.frame() %>%
+      clean_names() %>%
+      select(matches("country|score")) %>%
+      rename_with(~ paste0("country"), matches("country")) %>%
+      mutate(year = sub(".csv", "", i) %>% as.numeric())
     
-    # Create blank vector to store output from below logic
-    kaggle_years <- c()
-    
-    # Get distinct years since 2015 up to current year
-    while (kaggle_start_date <= Sys.Date() %>% year()) {
-      kaggle_years <- append(kaggle_start_date, kaggle_years)
-      kaggle_start_date <- kaggle_start_date + 1
-    }
-    
-    # Get String values to use in download logic
-    kaggle_years_csv <- kaggle_years %>% paste0(".csv")
-    
-    # Clear df_hp object in case it already exists
-    if(exists("df_hp")) {rm(df_hp)}
-    
-    # Download data from Kaggle and store & append to df_hp object
-    for (i in kaggle_years_csv) {
-      
-      # Download
-      df_temp <- kgl_dataset(
-        ref = "mathurinache/world-happiness-report",
-        file_name = i)
-      
-      # Data Cleansing
-      df_temp <-
-        lapply(df_temp, function(x) sub(",", ".", x)) %>%
-        data.frame() %>%
-        clean_names() %>%
-        select(matches("country|score")) %>%
-        rename_with( ~ paste0("country"), matches("country")) %>%
-        mutate(year = sub(".csv", "", i) %>% as.numeric())
-      
-      # Assign df_temp to df_hp if first loop, append if loop > 1
-      ifelse(exists("df_hp"),
-             df_hp <- df_hp %>% bind_rows(df_temp),
-             df_hp <- df_temp)
-    }
+    # Assign df_temp to df_hp if first loop, append if loop > 1
+    ifelse(exists("df_hp"),
+           df_hp <- df_hp %>% bind_rows(df_temp),
+           df_hp <- df_temp)
+  }
   
   # Additional Cleansing
-  df_hp <- df_hp %>% 
+  df_hp <- df_hp %>%
     
     # Concat different happiness score namings to one
-    select(country, year, happiness_score, ladder_score, score) %>% 
-    mutate(final_score = case_when(!is.na(happiness_score) ~ happiness_score,
-                                   !is.na(ladder_score) ~ ladder_score,
-                                   !is.na(score) ~ score,
-                                   TRUE ~ NA_character_)) %>%
+    select(country, year, happiness_score, ladder_score, score) %>%
+    mutate(
+      final_score = case_when(
+        !is.na(happiness_score) ~ happiness_score,!is.na(ladder_score) ~ ladder_score,!is.na(score) ~ score,
+        TRUE ~ NA_character_
+      )
+    ) %>%
     mutate(final_score = as.numeric(final_score)) %>%
     
     # Get iso3 code from country names
-    mutate(iso_3 = countrycode(country, "country.name", "iso3c",
-                               custom_match = c("Kosovo" = "XXK",
-                                                "Somaliland region" = "SOM",
-                                                "Somaliland Region" = "SOM"))) %>%
+    mutate(iso_3 = countrycode(
+      country,
+      "country.name",
+      "iso3c",
+      custom_match = c(
+        "Kosovo" = "XXK",
+        "Somaliland region" = "SOM",
+        "Somaliland Region" = "SOM"
+      )
+    )) %>%
     select(year, iso_3, happiness_score = final_score)
   
 }
@@ -141,7 +149,8 @@ df_hap <- get_kaggle_data()
 
 
 # GDP Data (Not used in final model)
-df_gdp <- wb_data("NY.GDP.MKTP.CD") %>% select(iso_3 = iso3c, year = date, gdp = NY.GDP.MKTP.CD)
+df_gdp <-
+  wb_data("NY.GDP.MKTP.CD") %>% select(iso_3 = iso3c, year = date, gdp = NY.GDP.MKTP.CD)
 
 # Corruption Perception Index Data (Not used in final model)
 df_cpi <- read_csv("data/Mass Mobilization Protests/df_cpi.csv")
@@ -165,7 +174,6 @@ df_protest %>% skim() %>% datatable(options = list(scrollX = TRUE, dom = "lrtip"
 #### Sample Data
 
 ```{r Data Overview Protest 2}
-
 df_protest %>% select(-sources, -notes) %>% head() %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
@@ -228,76 +236,90 @@ Now that we have a good overview of how the data is structured, let's restructur
 Here we'll apply the first layer of data cleansing to edit dirty data, create target label, and remove what we don't need. Additional transformation will be done in the Feature Engineering section down below.
 
 ```{r Data Cleansing}
-df_cleansed <- 
-  df_protest %>% 
+df_cleansed <-
+  df_protest %>%
   
   # Remove records (years) that did not have any protests
   filter(protest != 0) %>%
   
   # I'm particularly interested in [Participants] since it may indicate how major the protest is; it seems like the feature is in mixed numerical/character format.
-  # Manually reformat [Participants] to numerical values. 
+  # Manually reformat [Participants] to numerical values.
   # Use the lower bound when the value is a range.
   mutate(participants = tolower(participants)) %>%
-  mutate(participants = case_when(grepl("police put the turnout at 1,700", participants) ~ "1700", 
-                                  grepl("tens of", participants) ~ "",
-                                  grepl("several dozen", participants) ~ "12",
-                                  grepl("several hundred", participants) ~ "100",
-                                  grepl("several thousand", participants) ~ "1000",
-                                  grepl("thousand", participants) ~ "1000",
-                                  grepl("two million", participants) ~ "2000000",
-                                  grepl("million", participants) ~ "1000000",
-                                  grepl("6000 to 8000", participants) ~ "6000",
-                                  grepl("3000 to 5000", participants) ~ "3000",
-                                  grepl("2000 to 3,000", participants) ~ "2000",
-                                  grepl("2000 to 3000", participants) ~ "2000",
-                                  grepl("2,000 to 3,000", participants) ~ "2000",
-                                  grepl("2,000 to 4,000 people", participants) ~ "2000",
-                                  grepl("about 100 activists", participants) ~ "100",
-                                  grepl("between 11000 and 45000", participants) ~ "11000",
-                                  grepl("between 35,000 and 50,000", participants) ~ "35000",
-                                  grepl("Dennis Kwok, said more than 2,000", participants) ~ "2000",
-                                  grepl("200 kamnans and village heads", participants) ~ "200",
-                                  TRUE ~ participants)) %>%
+  mutate(
+    participants = case_when(
+      grepl("police put the turnout at 1,700", participants) ~ "1700",
+      grepl("tens of", participants) ~ "",
+      grepl("several dozen", participants) ~ "12",
+      grepl("several hundred", participants) ~ "100",
+      grepl("several thousand", participants) ~ "1000",
+      grepl("thousand", participants) ~ "1000",
+      grepl("two million", participants) ~ "2000000",
+      grepl("million", participants) ~ "1000000",
+      grepl("6000 to 8000", participants) ~ "6000",
+      grepl("3000 to 5000", participants) ~ "3000",
+      grepl("2000 to 3,000", participants) ~ "2000",
+      grepl("2000 to 3000", participants) ~ "2000",
+      grepl("2,000 to 3,000", participants) ~ "2000",
+      grepl("2,000 to 4,000 people", participants) ~ "2000",
+      grepl("about 100 activists", participants) ~ "100",
+      grepl("between 11000 and 45000", participants) ~ "11000",
+      grepl("between 35,000 and 50,000", participants) ~ "35000",
+      grepl("Dennis Kwok, said more than 2,000", participants) ~ "2000",
+      grepl("200 kamnans and village heads", participants) ~ "200",
+      TRUE ~ participants
+    )
+  ) %>%
   mutate(participants = gsub("[-&;].*", "", participants)) %>%
   mutate(participants = gsub("[^0-9]", "", participants)) %>%
   mutate(participants = as.numeric(participants)) %>%
   
   # Government responses are dispersed into multiple features.
   # Concatenate all response columns into one.
-  unite(col='concat_response', contains("stateresponse"), sep="_", remove=FALSE) %>%
+  unite(
+    col = 'concat_response',
+    contains("stateresponse"),
+    sep = "_",
+    remove = FALSE
+  ) %>%
   
   # Although I later determine to focus on the lethality of the response, here I try to explore the degree of danger level as a target label.
   # Identify danger level of government response toward protesters.
-  mutate(danger_level = case_when(grepl("killing|shooting", concat_response) ~ 2,
-                                  grepl("arrest|beating|crowd dispersal", concat_response) ~ 1,
-                                  grepl("ignore|accomodation", concat_response) ~ 0,
-                                  TRUE ~ 0) %>% as.factor()) %>%
+  mutate(danger_level = case_when(
+    grepl("killing|shooting", concat_response) ~ 2,
+    grepl("arrest|beating|crowd dispersal", concat_response) ~ 1,
+    grepl("ignore|accomodation", concat_response) ~ 0,
+    TRUE ~ 0
+  ) %>% as.factor()) %>%
   
   # Create target label to be used in model.
   # Identify whether government response was lethal to protesters.
-  mutate(lethal = case_when(grepl("killing|shooting", concat_response) ~ "Lethal",
-                            TRUE ~ "Non-Lethal") %>% factor(levels = c("Lethal", "Non-Lethal"))) %>%
+  mutate(lethal = case_when(
+    grepl("killing|shooting", concat_response) ~ "Lethal",
+    TRUE ~ "Non-Lethal"
+  ) %>% factor(levels = c("Lethal", "Non-Lethal"))) %>%
   
   # Remove original government response cols since I don't need it anymore.
   select(-contains("response")) %>%
   
   # Manually One hot encode protester demand cols due to the way it's structured.
-  mutate(n = 1) %>% 
+  mutate(n = 1) %>%
   pivot_longer(cols = contains("demand")) %>%
-  mutate(value = 
-           case_when(
-             is.na(value) ~ "None",
-             value == "." ~ "None",
-             TRUE ~ value)
-         ) %>%
+  mutate(value =
+           case_when(is.na(value) ~ "None",
+                     value == "." ~ "None",
+                     TRUE ~ value)) %>%
   select(-name) %>%
   distinct() %>%
-  pivot_wider(names_from = value, values_from = n, values_fill = 0) %>%
+  pivot_wider(names_from = value,
+              values_from = n,
+              values_fill = 0) %>%
   select(-None) %>%
-
+  
   # Concat Year Month Day cols together.
-  mutate(startdate = as.Date(paste(startyear, startmonth, startday, sep="-"),"%Y-%m-%d")) %>%
-  mutate(enddate = as.Date(paste(endyear, endmonth, endday, sep="-"),"%Y-%m-%d")) %>%
+  mutate(startdate = as.Date(paste(startyear, startmonth, startday, sep =
+                                     "-"), "%Y-%m-%d")) %>%
+  mutate(enddate = as.Date(paste(endyear, endmonth, endday, sep = "-"), "%Y-%m-%d")) %>%
   
   # Calculate duration of protests (in days).
   mutate(days_in_protest = as.numeric(enddate - startdate)) %>%
@@ -312,16 +334,23 @@ Let's join all datasets together using iso_3 country code and year as mapping ke
 
 ```{r Data Joining}
 
-df_cleansed_joined <- 
-  df_cleansed %>% 
+
+df_cleansed_joined <-
+  df_cleansed %>%
   
   # Create iso_3 with "countrycode" package, which I'll use as a joining key.
-  mutate(iso_3 = countrycode(country, "country.name", "iso3c",
-                             custom_match = c("Czechoslovakia" = "CZE",
-                                              "Germany East" = "DEU",
-                                              "Kosovo" = "XXK",
-                                              "Serbia and Montenegro" = "SRB",
-                                              "Yugoslavia" = "YUG"))) %>%
+  mutate(iso_3 = countrycode(
+    country,
+    "country.name",
+    "iso3c",
+    custom_match = c(
+      "Czechoslovakia" = "CZE",
+      "Germany East" = "DEU",
+      "Kosovo" = "XXK",
+      "Serbia and Montenegro" = "SRB",
+      "Yugoslavia" = "YUG"
+    )
+  )) %>%
   
   # Join Happiness Score.
   left_join(df_hap, by = c("iso_3", "year")) %>%
@@ -330,11 +359,13 @@ df_cleansed_joined <-
   left_join(df_gdp, by = c("iso_3", "year")) %>%
   
   # Join Corruption Perception Index Score.
-  left_join(df_cpi %>% 
-              mutate(cpi_score = case_when(Year <= 2009 ~ cpi_score * 10,
-                                           TRUE ~ cpi_score)) %>%
-              filter(!is.na(cpi_score)), 
-            by = c("iso_3", "year" = "Year"))
+  left_join(
+    df_cpi %>%
+      mutate(cpi_score = case_when(Year <= 2009 ~ cpi_score * 10,
+                                   TRUE ~ cpi_score)) %>%
+      filter(!is.na(cpi_score)),
+    by = c("iso_3", "year" = "Year")
+  )
 
 ```
 
@@ -345,33 +376,41 @@ df_cleansed_joined <-
 ```{r Exploratory Analysis}
 #| column: body-outset-right
 
-df_eda <- 
-  df_cleansed_joined %>% 
-  select(lethal,
-         year,
-         protesterviolence,
-         participants,
-         days_in_protest,
-         cpi_score,
-         gdp,
-         happiness_score
-         )
+df_eda <-
+  df_cleansed_joined %>%
+  select(
+    lethal,
+    year,
+    protesterviolence,
+    participants,
+    days_in_protest,
+    cpi_score,
+    gdp,
+    happiness_score
+  )
 
-df_eda %>% 
-  ggpairs(mapping = 
-            aes(alpha = 0.5,
-                color = 
-                  factor(lethal, 
-                         levels = c("Lethal", "Non-Lethal"), 
-                         labels = c("Lethal", "Non-Lethal"))
-                ),
-          legend = 1,
-          upper = list(continuous = wrap("cor", alpha = 1, size = 2)),
-          title = "EDA") +
-  theme(strip.text.x = element_text(size = 7),
-        strip.text.y = element_text(size = 7),
-        axis.text = element_text(size = 6),
-        legend.position = "bottom") +
+df_eda %>%
+  ggpairs(
+    mapping =
+      aes(
+        alpha = 0.5,
+        color =
+          factor(
+            lethal,
+            levels = c("Lethal", "Non-Lethal"),
+            labels = c("Lethal", "Non-Lethal")
+          )
+      ),
+    legend = 1,
+    upper = list(continuous = wrap("cor", alpha = 1, size = 2)),
+    title = "EDA"
+  ) +
+  theme(
+    strip.text.x = element_text(size = 7),
+    strip.text.y = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    legend.position = "bottom"
+  ) +
   labs(fill = "Lethality")
 ```
 
@@ -388,11 +427,18 @@ Let's check correlation between features to understand which features might be r
 ```{r Corr Analysis 1}
 
 # Create correlation matrix & plot.
-df_col <- cor(df_cleansed_joined %>% 
-                select_if(is.numeric) %>% 
-                select(-protest, -id, -ccode), 
-              method = "spearman", use = "complete.obs")
-corrplot(df_col, "square", addrect = 5, order = 'hclust', diag = FALSE)
+df_col <- cor(
+  df_cleansed_joined %>%
+    select_if(is.numeric) %>%
+    select(-protest,-id,-ccode),
+  method = "spearman",
+  use = "complete.obs"
+)
+corrplot(df_col,
+         "square",
+         addrect = 5,
+         order = 'hclust',
+         diag = FALSE)
 ```
 
 I'm particularly interested in \[happiness score\], \[gdp\], and \[cpi_score\] here. I'll run some significance tests to validate correlation between these features.
@@ -409,26 +455,27 @@ cor.test(df_cleansed_joined$happiness_score, df_cleansed_joined$cpi_score)
 Test tells us that they're significantly correlated. We'll remove \[cpi_score\] and \[gdp\]. I'm choosing \[happiness_score\] over others based on our EDA (and comparing how all 3 impacts the final model). I'll also remove the duplicate date features.
 
 ```{r Feature Selection}
-df_final <- 
-  df_cleansed_joined %>% 
-  select(lethal,
-         id,
-         year,
-         startmonth,
-         iso_3,
-         protestnumber,
-         protesterviolence,
-         participants,
-         days_in_protest,
-         happiness_score,
-         political_behavior_process,
-         labor_wage_dispute,
-         land_farm_issue,
-         police_brutality,
-         price_increases_tax_policy,
-         social_restrictions,
-         removal_of_politician
-         ) %>%
+df_final <-
+  df_cleansed_joined %>%
+  select(
+    lethal,
+    id,
+    year,
+    startmonth,
+    iso_3,
+    protestnumber,
+    protesterviolence,
+    participants,
+    days_in_protest,
+    happiness_score,
+    political_behavior_process,
+    labor_wage_dispute,
+    land_farm_issue,
+    police_brutality,
+    price_increases_tax_policy,
+    social_restrictions,
+    removal_of_politician
+  ) %>%
   mutate_if(is.character, factor)
 ```
 
@@ -488,7 +535,7 @@ pt_rec <- recipe(lethal ~ ., data = pt_train) %>%
 
 ## Model Building
 
-Predicting lethality of a protest is a classification problem. There are many algorithms to use, and we'll try to use couple of them and pick the one with best outcome in the end. We'll cover Logistic Regression, KNN, Random Forest, and XGBoost algorithms.
+Predicting lethality of a protest is a classification problem. There are many algorithms to use, and we'll try to use couple of them and pick the one with best outcome in the end. We'll cover Logistic Regression, KNN, Random Forest, and XGBoost algorithms. We'll also use Recall as the tuning metric, since we care more about capturing as many lethal scenarios as possible.
 
 ::: panel-tabset
 
@@ -498,26 +545,31 @@ Here we create a specification for Logistic Regression Model, then use tune_grid
 
 ```{r Logistic Regression 1}
 
-lr_spec <- 
+lr_spec <-
   logistic_reg(penalty = tune(), mixture = tune()) %>%
-  set_mode("classification") %>% 
-  set_engine("glmnet") 
+  set_mode("classification") %>%
+  set_engine("glmnet")
 
-lr_workflow <- 
-  workflow() %>% 
-  add_recipe(pt_rec) %>% 
-  add_model(lr_spec) 
+lr_workflow <-
+  workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(lr_spec)
 
 # Use the model if it already exists- if not, create the model.
 lr_path <- file.path("data/Mass Mobilization Protests/lr_tune.rds")
 
 if (file.exists(lr_path)) {
   lr_tune <- read_rds(file = lr_path)
-  } else {
-    lr_tune <-
-    tune_grid(lr_workflow, resamples = df_folds, grid = 11)
-    saveRDS(lr_tune, file = lr_path)
-  }
+} else {
+  lr_tune <-
+    tune_grid(
+      lr_workflow,
+      resamples = df_folds,
+      metrics = metric_set(roc_auc, accuracy, recall),
+      grid = 11
+    )
+  saveRDS(lr_tune, file = lr_path)
+}
 ```
 
 What are the best parameters according to our metrics collected from different folds?
@@ -526,15 +578,18 @@ What are the best parameters according to our metrics collected from different f
 # Reload DT
 library(DT)
 
+cols <- c("pendalty", "mixture", "mean", "std_err")
+
 # Show best parameters
-show_best(lr_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
-show_best(lr_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+# show_best(lr_tune, metric = "recall") %>%
+#   mutate(across(cols, round, 4)) %>%
+#   datatable(options = list(scrollX = TRUE, dom = "rti"))
 
 # Show all parameters from folds.
-plt_lr_penalty <- 
+plt_lr_penalty <-
   lr_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
+  filter(.metric == "recall") %>%
   select(mean, penalty) %>%
   ggplot(aes(penalty, mean)) +
   geom_point(show.legend = FALSE)
@@ -542,7 +597,7 @@ plt_lr_penalty <-
 plt_lr_mixture <-
   lr_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
+  filter(.metric == "recall") %>%
   select(mean, mixture) %>%
   ggplot(aes(mixture, mean)) +
   geom_point(show.legend = FALSE)
@@ -553,12 +608,13 @@ grid.arrange(plt_lr_penalty, plt_lr_mixture)
 Lastly, fit the model
 
 ```{r Logistic Regression 3}
-# Create a workflow to use a model with best hyper parameters based on roc curve.
+# Create a workflow to use a model with best hyper parameters based on recall.
 final_lr_wf <- lr_workflow %>%
-  finalize_workflow(select_best(lr_tune, "roc_auc"))
+  finalize_workflow(select_best(lr_tune, "recall"))
 
 # Fit the model.
-protest_fit_lr <- last_fit(final_lr_wf, pt_split)
+protest_fit_lr <-
+  last_fit(final_lr_wf, pt_split, metrics = metric_set(roc_auc, accuracy, recall))
 ```
 
 We'll follow the same steps below to create KNN, Random Forest, and XGBoost .
@@ -571,26 +627,32 @@ Create specification for KKNN Model and collect performance metrics from folds.
 # DT seems to be overriding already existing functions. Detach in this code block.
 if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
 
-kknn_spec <- 
+kknn_spec <-
   nearest_neighbor(neighbors = tune(), weight_func = tune()) %>%
-  set_mode("classification") %>% 
-  set_engine("kknn") 
+  set_mode("classification") %>%
+  set_engine("kknn")
 
-kknn_workflow <- 
-  workflow() %>% 
-  add_recipe(pt_rec) %>% 
-  add_model(kknn_spec) 
+kknn_workflow <-
+  workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(kknn_spec)
 
 # Use the model if it already exists- if not, create the model.
-kknn_path <- file.path("data/Mass Mobilization Protests/kknn_tune.rds")
+kknn_path <-
+  file.path("data/Mass Mobilization Protests/kknn_tune.rds")
 
 if (file.exists(kknn_path)) {
   kknn_tune <- read_rds(file = kknn_path)
-  } else {
-    kknn_tune <-
-    tune_grid(kknn_workflow, resamples = df_folds, grid = 11)
-    saveRDS(kknn_tune, file = kknn_path)
-  }
+} else {
+  kknn_tune <-
+    tune_grid(
+      kknn_workflow,
+      resamples = df_folds,
+      metrics = metric_set(roc_auc, accuracy, recall),
+      grid = 11
+    )
+  saveRDS(kknn_tune, file = kknn_path)
+}
 ```
 
 What are the best parameters according to our metrics collected from different folds?
@@ -599,15 +661,13 @@ What are the best parameters according to our metrics collected from different f
 # Reload DT
 library(DT)
 
-# Show best parameters
-show_best(kknn_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
-show_best(kknn_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+cols <- c("mean", "std_err")
 
 # Show all parameters from folds.
-plt_kknn_neighbors <- 
+plt_kknn_neighbors <-
   kknn_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
+  filter(.metric == "recall") %>%
   select(mean, neighbors) %>%
   ggplot(aes(neighbors, mean)) +
   geom_point(show.legend = FALSE)
@@ -615,7 +675,7 @@ plt_kknn_neighbors <-
 plt_kknn_weight_func <-
   kknn_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
+  filter(.metric == "recall") %>%
   select(mean, weight_func) %>%
   ggplot(aes(weight_func, mean)) +
   geom_point(show.legend = FALSE)
@@ -626,12 +686,13 @@ grid.arrange(plt_kknn_neighbors, plt_kknn_weight_func)
 Fit the model.
 
 ```{r Weighted K-Nearest Neighbor Fit}
-# Create a workflow to use a model with best hyper parameters based on roc curve.
+# Create a workflow to use a model with best hyper parameters based on recall.
 final_kknn_wf <- kknn_workflow %>%
-  finalize_workflow(select_best(kknn_tune, "roc_auc"))
+  finalize_workflow(select_best(kknn_tune, "recall"))
 
 # Fit the model.
-protest_fit_kknn <- last_fit(final_kknn_wf, pt_split)
+protest_fit_kknn <-
+  last_fit(final_kknn_wf, pt_split, metrics = metric_set(roc_auc, accuracy, recall))
 ```
 
 ### Model: Random Forest
@@ -659,7 +720,7 @@ if (file.exists(ranger_path)) {
   ranger_tune <- read_rds(file = ranger_path)
   } else {
     ranger_tune <-
-    tune_grid(ranger_workflow, resamples = df_folds, grid = 11)
+    tune_grid(ranger_workflow, resamples = df_folds, metrics = metric_set(roc_auc, accuracy, recall), grid = 11)
     saveRDS(ranger_tune, file = ranger_path)
     }
 ```
@@ -669,14 +730,17 @@ Show best parameters from folds.
 ```{r Random Forest 2}
 library(DT)
 
+cols <- c("mean", "std_err")
+
 # Show Best Parameters.
-show_best(ranger_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
-show_best(ranger_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+# show_best(ranger_tune, metric = "recall") %>% 
+#   mutate(across(cols, round, 4)) %>%
+#   datatable(options = list(scrollX = TRUE, dom = "rti"))
 
 # Show all parameters from folds.
 ranger_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
+  filter(.metric == "recall") %>%
   select(mean, min_n, mtry, trees) %>%
   pivot_longer(min_n:trees,
                values_to = "value",
@@ -689,12 +753,12 @@ ranger_tune %>%
 Fit the model.
 
 ```{r Random Forest 3}
-# Create a workflow to use a model with best hyper parameters based on roc curve.
+# Create a workflow to use a model with best hyper parameters based on recall.
 final_rf_wf <- ranger_workflow %>%
-  finalize_workflow(select_best(ranger_tune, "roc_auc"))
+  finalize_workflow(select_best(ranger_tune, "recall"))
 
 # Fit the model.
-protest_fit_rf <- last_fit(final_rf_wf, pt_split)
+protest_fit_rf <- last_fit(final_rf_wf, pt_split, metrics = metric_set(roc_auc, accuracy, recall))
 ```
 
 ### Model: XGBoost
@@ -705,27 +769,39 @@ Create specification for XGBoost Model and collect performance metrics from fold
 # DT seems to be overriding already existing functions. Detach in this code block.
 if(any(grepl("package:DT", search()))) detach("package:DT") else message("DT not loaded")
 
-xgboost_spec <- 
-  boost_tree(trees = tune(), min_n = tune(), tree_depth = tune(), learn_rate = tune(),
-             loss_reduction = tune(), sample_size = tune()) %>%
-  set_mode("classification") %>% 
-  set_engine("xgboost") 
+xgboost_spec <-
+  boost_tree(
+    trees = tune(),
+    min_n = tune(),
+    tree_depth = tune(),
+    learn_rate = tune(),
+    loss_reduction = tune(),
+    sample_size = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("xgboost")
 
-xgboost_workflow <- 
-  workflow() %>% 
-  add_recipe(pt_rec) %>% 
-  add_model(xgboost_spec) 
+xgboost_workflow <-
+  workflow() %>%
+  add_recipe(pt_rec) %>%
+  add_model(xgboost_spec)
 
 # Use the model if it already exists- if not, create the model.
-xgboost_path <- file.path("data/Mass Mobilization Protests/xgb_tune.rds")
+xgboost_path <-
+  file.path("data/Mass Mobilization Protests/xgb_tune.rds")
 
 if (file.exists(xgboost_path)) {
   xgboost_tune <- read_rds(file = xgboost_path)
-  } else {
-    xgboost_tune <-
-    tune_grid(xgboost_workflow, resamples = df_folds, grid = 11)
-    saveRDS(xgboost_tune, file = xgboost_path)
-    }
+} else {
+  xgboost_tune <-
+    tune_grid(
+      xgboost_workflow,
+      resamples = df_folds,
+      metrics = metric_set(roc_auc, accuracy, recall),
+      grid = 11
+    )
+  saveRDS(xgboost_tune, file = xgboost_path)
+}
 ```
 
 Show best parameters from folds.
@@ -733,39 +809,45 @@ Show best parameters from folds.
 ```{r XGBoost 2}
 library(DT)
 
-# Show Best Parameters.
-show_best(xgboost_tune, metric = "accuracy") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
-show_best(xgboost_tune, metric = "roc_auc") %>% datatable(options = list(scrollX = TRUE, dom = "rti"))
+cols <- c("learn_rate", "loss_reduction", "sample_size", "mean", "std_err")
 
 # Show all parameters from folds.
 xgboost_tune %>%
   collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
-  select(mean, trees, min_n, tree_depth, learn_rate, loss_reduction, sample_size) %>%
+  filter(.metric == "recall") %>%
+  select(mean,
+         trees,
+         min_n,
+         tree_depth,
+         learn_rate,
+         loss_reduction,
+         sample_size) %>%
   pivot_longer(trees:sample_size,
                values_to = "value",
                names_to = "parameter") %>%
   ggplot(aes(value, mean, color = parameter)) +
   geom_point(show.legend = FALSE) +
-  facet_wrap( ~ parameter, scales = "free_x")
+  facet_wrap(~ parameter, scales = "free_x")
 ```
 
 Fit the model.
 
 ```{r XGBoost 3}
-# Create a workflow to use a model with best hyper parameters based on roc curve.
+# Create a workflow to use a model with best hyper parameters based on recall.
 final_xgb_wf <- xgboost_workflow %>%
-  finalize_workflow(select_best(xgboost_tune, metric = "roc_auc"))
+  finalize_workflow(select_best(xgboost_tune, metric = "recall"))
 
 # Fit the model.
-protest_fit_xgb <- last_fit(final_xgb_wf, pt_split)
+protest_fit_xgb <-
+  last_fit(final_xgb_wf, pt_split, metrics = metric_set(roc_auc, accuracy, recall))
 ```
 
 :::
 
 ## Model Results
 
-Let's take a look at accuracy and roc_auc metrics to understand which model performed the best.
+collect_metrics automatically uses test dataset from the split to evaluate. 
+Let's take a look at accuracy, roc_auc, and most importantly, recall.
 
 ```{r Results 1}
 result_lr <- collect_metrics(protest_fit_lr) %>% mutate(model = "Logistic Regression")
@@ -778,6 +860,7 @@ bind_rows(result_lr, result_kknn, result_rf, result_xgb) %>%
   select(-.estimator, -.config) %>% 
   mutate(accuracy = percent(accuracy, accuracy = 0.1)) %>%
   mutate(roc_auc = percent(roc_auc, accuracy = 0.1)) %>%
+  mutate(recall = percent(recall, accuracy = 0.1)) %>%
   datatable(options = list(scrollX = TRUE, dom = "rti"))
 ```
 
@@ -787,51 +870,51 @@ bind_rows(result_lr, result_kknn, result_rf, result_xgb) %>%
 ```{r Results 2}
 # Confusion Matrix
 cm <-
-  collect_predictions(protest_fit_lr) %>% 
-    mutate(model = "logreg") %>%
-    bind_rows(collect_predictions(protest_fit_kknn) %>%
-                mutate(model = "kknn")) %>%
-    bind_rows(collect_predictions(protest_fit_rf) %>%
-                mutate(model = "rforest")) %>%
-    bind_rows(collect_predictions(protest_fit_xgb)%>%
-                mutate(model = "xgboost")) %>%
-    group_by(model) %>%
-    conf_mat(lethal, .pred_class)
- 
-lr_cm <- 
-  cm %>% 
-  filter(model == "logreg") %>% 
-  .$conf_mat %>% 
-  .[[1]] %>% 
-  autoplot(type = "heatmap") + 
+  collect_predictions(protest_fit_lr) %>%
+  mutate(model = "logreg") %>%
+  bind_rows(collect_predictions(protest_fit_kknn) %>%
+              mutate(model = "kknn")) %>%
+  bind_rows(collect_predictions(protest_fit_rf) %>%
+              mutate(model = "rforest")) %>%
+  bind_rows(collect_predictions(protest_fit_xgb) %>%
+              mutate(model = "xgboost")) %>%
+  group_by(model) %>%
+  conf_mat(lethal, .pred_class)
+
+lr_cm <-
+  cm %>%
+  filter(model == "logreg") %>%
+  .$conf_mat %>%
+  .[[1]] %>%
+  autoplot(type = "heatmap") +
   ggtitle("Logistic Regression") +
   theme(plot.title = element_text(hjust = 0.95))
 
-kknn_cm <- 
-  cm %>% 
-  filter(model == "kknn") %>% 
-  .$conf_mat %>% 
-  .[[1]] %>% 
-  autoplot(type = "heatmap") + 
-  ggtitle("Weighted K-Nearest Neighbor") + 
+kknn_cm <-
+  cm %>%
+  filter(model == "kknn") %>%
+  .$conf_mat %>%
+  .[[1]] %>%
+  autoplot(type = "heatmap") +
+  ggtitle("Weighted K-Nearest Neighbor") +
   theme(plot.title = element_text(hjust = 0.95))
 
-rf_cm <- 
-  cm %>% 
-  filter(model == "rforest") %>% 
-  .$conf_mat %>% 
-  .[[1]] %>% 
-  autoplot(type = "heatmap") + 
-  ggtitle("Random Forest") + 
+rf_cm <-
+  cm %>%
+  filter(model == "rforest") %>%
+  .$conf_mat %>%
+  .[[1]] %>%
+  autoplot(type = "heatmap") +
+  ggtitle("Random Forest") +
   theme(plot.title = element_text(hjust = 0.95))
 
-xgboost_cm <- 
-  cm %>% 
-  filter(model == "xgboost") %>% 
-  .$conf_mat %>% 
-  .[[1]] %>% 
-  autoplot(type = "heatmap") + 
-  ggtitle("XGBoost") + 
+xgboost_cm <-
+  cm %>%
+  filter(model == "xgboost") %>%
+  .$conf_mat %>%
+  .[[1]] %>%
+  autoplot(type = "heatmap") +
+  ggtitle("XGBoost") +
   theme(plot.title = element_text(hjust = 0.95))
 
 grid.arrange(lr_cm, kknn_cm, rf_cm, xgboost_cm)
@@ -847,7 +930,7 @@ collect_predictions(protest_fit_lr) %>%
               mutate(model = "KKNN")) %>%
   bind_rows(collect_predictions(protest_fit_rf) %>%
               mutate(model = "Random Forest")) %>%
-  bind_rows(collect_predictions(protest_fit_xgb)%>%
+  bind_rows(collect_predictions(protest_fit_xgb) %>%
               mutate(model = "XGBoost")) %>%
   group_by(model) %>%
   roc_curve(lethal, .pred_Lethal) %>%
@@ -856,9 +939,9 @@ collect_predictions(protest_fit_lr) %>%
   xlab("False Positive Rate \n (1 - Specificity)")
 ```
 
-With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well. 86% TPR is not perfect, but is decent. Our model shows signs of good generalization and likely will do well at predicting with unseen data.
+With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well for our small dataset. Our models shows signs of good generalization and likely will do well at predicting with unseen data.
 
-Random Forest Model arguably performs a ted bit better, but Logistic Regression may be a better choice in real life scenario since it is more explanable and also scales better with bias towards Positive Labels. Given that consequences are human death, we care more about catching "Lethality" Labels as much as possible, even if that means lowering the total accuracy of the model.
+KNN seems to have the highest recall. Since we care about capturing as many positive labels as possible in this case, KNN might be a good choice in real world scenarios. However, it has lower accuracy and roc_auc compared to other models, which leads me to believe that it does a worse job in distinguishing between positive and negative labels. Also, while it's possible to indirectly understand feature importance through KNN, it's not as intuitive as tree or regression based model. For these reasons, I'd select Random Forest as a model of choice.
 
 ## Variable Importance
 
@@ -951,15 +1034,18 @@ We can use few key features to intuitively guess if protest will be life-threate
 
 ### Protester Violence
 ```{r}
-
-df_final %>% 
-  count(lethal, protesterviolence) %>% 
-  mutate(protesterviolence = 
-           case_when(protesterviolence == 0 ~ "No Protester violence", 
-                     TRUE ~ "Protester Violence")) %>% 
-  ggplot(aes(x = lethal, y = n, fill = lethal)) + 
-  geom_bar(stat = "identity", show.legend = FALSE) + 
-  facet_wrap("protesterviolence") + 
+df_final %>%
+  count(lethal, protesterviolence) %>%
+  mutate(
+    protesterviolence =
+      case_when(
+        protesterviolence == 0 ~ "No Protester violence",
+        TRUE ~ "Protester Violence"
+      )
+  ) %>%
+  ggplot(aes(x = lethal, y = n, fill = lethal)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap("protesterviolence") +
   theme_bw() +
   xlab("") +
   ylab("Count")
@@ -967,14 +1053,13 @@ df_final %>%
 
 ### Happiness Score
 ```{r}
-
-df_final %>% 
+df_final %>%
   filter(!is.na(happiness_score)) %>%
-  mutate(happiness_score_bin = cut(happiness_score, breaks=5)) %>% 
-  count(lethal, happiness_score_bin) %>% 
-  ggplot(aes(x = lethal, y = n, fill = lethal)) + 
-  geom_bar(stat = "identity", show.legend = FALSE) + 
-  facet_wrap("happiness_score_bin") + 
+  mutate(happiness_score_bin = cut(happiness_score, breaks = 5)) %>%
+  count(lethal, happiness_score_bin) %>%
+  ggplot(aes(x = lethal, y = n, fill = lethal)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap("happiness_score_bin") +
   theme_bw() +
   xlab("") +
   ylab("Count") +
@@ -1000,27 +1085,54 @@ df_final %>%
 
 ### Country
 ```{r}
-df_final %>% 
-  mutate(Country = countrycode(iso_3, "iso3c", "country.name",
-                               custom_match = c("XXK" = "Kosovo",
-                                                "YUG" = "Yugoslavia"))) %>%
-  count(lethal, Country) %>% 
+df_final %>%
+  mutate(Country = countrycode(
+    iso_3,
+    "iso3c",
+    "country.name",
+    custom_match = c("XXK" = "Kosovo",
+                     "YUG" = "Yugoslavia")
+  )) %>%
+  count(lethal, Country) %>%
   pivot_wider(names_from = lethal, values_from = n) %>%
   mutate(Lethal = case_when(is.na(Lethal) ~ 0, TRUE ~ as.numeric(Lethal))) %>%
-  mutate(`Non-Lethal` = 
+  mutate(`Non-Lethal` =
            case_when(is.na(`Non-Lethal`) ~ 0, TRUE ~ as.numeric(`Non-Lethal`))) %>%
-  mutate(Percent_Lethal = 
+  mutate(Percent_Lethal =
            percent(Lethal / (Lethal + `Non-Lethal`), accuracy = 0.1)) %>%
-  datatable(filter = "top", options = list(scrollX = TRUE, dom = "lrtip"))
+  datatable(filter = "top",
+            options = list(scrollX = TRUE, dom = "lrtip"))
 ```
+### Removal of Politician
+```{r}
+df_final %>% 
+  count(lethal, removal_of_politician) %>% 
+  pivot_wider(names_from = removal_of_politician, values_from = n) %>%
+  mutate(`1` = `1` / sum(`1`)) %>%
+  mutate(`0` = `0` / sum(`0`)) %>%
+  rename(`Protest Reason: Removal of Politician` = `1`, `Other Reason` = `0`) %>%
+  pivot_longer(cols=c(`Protest Reason: Removal of Politician`, `Other Reason`)) %>%
+  ggplot(aes(x = lethal, y = value, fill = lethal)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap("name") +
+  theme_bw() +
+  xlab("") +
+  ylab("Percent Total") +
+  theme() +
+  scale_y_continuous(labels = scales::percent)
+
+```
+
 
 :::
 
 Our data does not indicate whether a protester violence was originally initiated by protesters, or was initiated as a reaction to government's violence. However, we can safely assume that provocation by either side may escalate the situation.
 
-In addition, citizens' happiness score (and innate government track record impacting that happiness) is a great predictor of how the government would respond. Lower the score, higher the likelihood of lethal response to occur.
+Citizens' happiness score (and innate government track record impacting that happiness) is a great predictor of how the government would respond. Lower the score, higher the likelihood of lethal response to occur.
 
-Lastly, most lethal events happen on the first day of the protest, and countries with consistent track record are likely to continue do what they have done in the past.
+Most lethal events happen on the first day of the protest, and countries with consistent track record are likely to continue do what they have done in the past.
+
+Lastly, if the protest is around removal of politician, it likely will yield higher chance of lethality.
 
 Though some of these seem like a no-brainer now that we look at it, as my mentor used to put it, good analysis often leads to obvious results.
 
