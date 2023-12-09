@@ -941,7 +941,7 @@ collect_predictions(protest_fit_lr) %>%
 
 With an unbalanced data like ours, accuracy can be a poor predictor of model performance. We'll use the roc curve instead as a measure. Both Logistic Regression and Random Forest Model performs well for our small dataset. Our models shows signs of good generalization and likely will do well at predicting with unseen data.
 
-KNN seems to have the highest recall. Since we care about capturing as many positive labels as possible in this case, KNN might be a good choice in real world scenarios. However, it has lower accuracy and roc_auc compared to other models, which leads me to believe that it does a worse job in distinguishing between positive and negative labels. Also, while it's possible to indirectly understand feature importance through KNN, it's not as intuitive as tree or regression based model. For these reasons, I'd select Random Forest as a model of choice.
+KNN seems to have the highest recall. Since we care about capturing as many positive labels as possible in this case, KNN may be a good choice. However, it has lower accuracy and roc_auc compared to other models, which lowers my confidence in its ability to remain consistent in distinguishing positive and negative labels. Also, while it's possible to indirectly understand feature importance through KNN, it's not as intuitive as tree or regression based model. For practicality reasons, I'd select Random Forest as a model of choice for real world scenarios.
 
 ## Variable Importance
 
